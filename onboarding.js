@@ -174,17 +174,57 @@
     return { overlay: overlay, first: name };
   }
 
-  var profile = load();
-  window.__agamimProfile = profile;
-  if (profile) return;
+  window.__agamimProfile = load();
+
+  // The app marks a completed sign-in (after MFA) by writing {signedIn:true}
+  // to sessionStorage under "auth". The profile form is shown right after that.
+  var AUTH_KEY = "auth";
+  var overlay = null;
+
+  function signedIn() {
+    try {
+      var a = JSON.parse(sessionStorage.getItem(AUTH_KEY) || "null");
+      return !!(a && a.signedIn);
+    } catch (e) {
+      return false;
+    }
+  }
+
+  function hide() {
+    if (overlay && overlay.parentNode) overlay.parentNode.removeChild(overlay);
+    overlay = null;
+    document.documentElement.classList.remove("ob-lock");
+  }
 
   function show() {
+    if (overlay || !document.body) return;
     var ui = build();
-    document.body.appendChild(ui.overlay);
+    overlay = ui.overlay;
+    document.body.appendChild(overlay);
     document.documentElement.classList.add("ob-lock");
     ui.first.focus();
   }
 
-  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", show);
-  else show();
+  function sync() {
+    if (signedIn() && !load()) show();
+    else hide();
+  }
+
+  // Same-tab sessionStorage writes fire no event, so watch the app's own calls.
+  var proto = Storage.prototype;
+  var origSet = proto.setItem;
+  var origRemove = proto.removeItem;
+  proto.setItem = function (k) {
+    var r = origSet.apply(this, arguments);
+    if (this === window.sessionStorage && k === AUTH_KEY) sync();
+    return r;
+  };
+  proto.removeItem = function (k) {
+    var r = origRemove.apply(this, arguments);
+    if (this === window.sessionStorage && k === AUTH_KEY) sync();
+    return r;
+  };
+
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", sync);
+  else sync();
 })();
