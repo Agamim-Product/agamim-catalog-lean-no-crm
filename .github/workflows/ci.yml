@@ -1,0 +1,91 @@
+name: CI/CD
+
+# Test every push and pull request with Playwright.
+# Deploy to GitHub Pages (the gh-pages branch) only from main, or by hand via "Run workflow",
+# and only after the tests pass.
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Playwright tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Run Playwright tests
+        run: npx playwright test
+
+      - name: Upload test report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 14
+          if-no-files-found: ignore
+
+  deploy:
+    name: Deploy to GitHub Pages
+    needs: test
+    if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write # pushes the gh-pages branch
+    concurrency:
+      group: pages-deploy
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Assemble the site (no test or tooling files)
+        run: |
+          mkdir _site
+          rsync -a \
+            --exclude='.git' --exclude='.github' --exclude='.gitignore' \
+            --exclude='node_modules' --exclude='tests' --exclude='tools' \
+            --exclude='playwright-report' --exclude='test-results' --exclude='_site' \
+            --exclude='package.json' --exclude='package-lock.json' --exclude='playwright.config.js' \
+            --exclude='README.md' \
+            ./ _site/
+          touch _site/.nojekyll
+          echo "Files in the published site:"
+          find _site -type f | wc -l
+          test -f _site/index.html
+          test -f _site/add-dataset.html
+          test ! -e _site/tests
+
+      - name: Publish to the gh-pages branch
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./_site
+          publish_branch: gh-pages
+          force_orphan: true
+          user_name: github-actions[bot]
+          user_email: 41898282+github-actions[bot]@users.noreply.github.com
+          commit_message: "Deploy ${{ github.sha }} (${{ github.ref_name }})"

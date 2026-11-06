@@ -1,0 +1,16 @@
+{
+  "name": "agamim-catalog-lean-no-crm",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Static data-catalog site. This package only holds the test tooling; the site itself has no build step.",
+  "scripts": {
+    "serve": "http-server . -p 4173 -a 127.0.0.1 -c-1",
+    "test": "playwright test",
+    "test:headed": "playwright test --headed",
+    "test:report": "playwright show-report"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.65.0",
+    "http-server": "^14.1.1"
+  }
+}
